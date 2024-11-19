@@ -1,0 +1,12 @@
+sudo ip link set dev enp0s3 xdp off
+sudo ip link set dev enp0s3 xdp obj packet_capture.o sec xdp
+sudo cat /sys/kernel/debug/tracing/trace_pipe
+make
+
+
+gcc -o user_prog user_prog.c -lbpf -lelf
+sudo ./user_prog
+
+ip link show dev enp0s3
+
+
