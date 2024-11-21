@@ -1,67 +1,59 @@
 #include <linux/bpf.h>
-#include <bpf/bpf_helpers.h>
 #include <linux/if_ether.h>
 #include <linux/ip.h>
 #include <linux/udp.h>
 
-#define MAX_PKT_SIZE 4096
-
-struct {
-    __uint(type, BPF_MAP_TYPE_RINGBUF);
-    __uint(max_entries, 1 << 24); // 16 MB ring buffer
-} ringbuff SEC(".maps");
-
-// Define the structure for storing packet data
-struct packet_info {
-    __u64 timestamp;
-    __u32 pkt_len;
-    char data[MAX_PKT_SIZE];
+struct packet_event {
+    __u32 src_ip;
+    __u32 dst_ip;
+    __u16 src_port;
+    __u16 dst_port;
+    __u8 protocol;
 };
 
-// XDP program to capture packets
-SEC("xdp")
+BPF_RINGBUF_OUTPUT(buffer, 1 << 4);
+
 int xdp_prog(struct xdp_md *ctx) {
-    void *data = (void *)(long)ctx->data;
     void *data_end = (void *)(long)ctx->data_end;
+    void *data = (void *)(long)ctx->data;
+    struct ethhdr *eth = data;
 
-    // Calculate packet length
-    __u32 pkt_len = data_end - data;
+    // Ensure there's enough data for the Ethernet header
+    if (data + sizeof(*eth) > data_end)
+        return XDP_PASS;
 
-    // Check if packet length exceeds the maximum allowed size
-    if (pkt_len > MAX_PKT_SIZE) {
-        return XDP_DROP;
+    // Check if it's an IP packet
+    if (eth->h_proto != __constant_htons(ETH_P_IP))
+        return XDP_PASS;
+
+    struct iphdr *ip = data + sizeof(*eth);
+
+    // Ensure there's enough data for the IP header
+    if ((void *)ip + sizeof(*ip) > data_end)
+        return XDP_PASS;
+
+    // Check if it's UDP or TCP (protocols 6 and 17)
+    if (ip->protocol != IPPROTO_UDP && ip->protocol != IPPROTO_TCP)
+        return XDP_PASS;
+
+    struct packet_event event = {};
+    event.src_ip = ip->saddr;
+    event.dst_ip = ip->daddr;
+    event.protocol = ip->protocol;
+
+    // Check if it's UDP to parse ports
+    if (ip->protocol == IPPROTO_UDP) {
+        struct udphdr *udp = (void *)ip + (ip->ihl * 4);
+
+        if ((void *)udp + sizeof(*udp) > data_end)
+            return XDP_PASS;
+
+        event.src_port = udp->source;
+        event.dst_port = udp->dest;
     }
 
-    // Reserve space in the ring buffer
-    struct packet_info *pkt = bpf_ringbuf_reserve(&ringbuff, sizeof(struct packet_info), 0);
-    if (!pkt) {
-        bpf_printk("Failed to reserve ringbuf space\n");
-        return XDP_DROP;
-    }
-
-    // Store timestamp and packet length
-    pkt->timestamp = bpf_ktime_get_ns();
-    pkt->pkt_len = pkt_len;
-
-    // Copy packet data safely
-    __u8 *cursor = data;
-    for (__u32 i = 0; i < pkt_len && i < MAX_PKT_SIZE; i++) {
-        if ((__u8 *)cursor + 1 > (__u8 *)data_end) { // Explicit check for out-of-bounds access
-            bpf_ringbuf_discard(pkt, 0);
-            bpf_printk("Packet discarded: out of bounds\n");
-            return XDP_DROP;
-        }
-        pkt->data[i] = *cursor;
-        cursor++;
-    }
-
-    // Submit the packet to the ring buffer
-    bpf_printk("Ring buffer entry: timestamp=%llu, len=%u\n", pkt->timestamp, pkt->pkt_len);
-    bpf_ringbuf_submit(pkt, 2);
-    bpf_printk("Packet successfully added to ring buffer\n");
+    // Send the event to the user space via the ring buffer
+    buffer.ringbuf_output(&event, sizeof(event), 0);
 
     return XDP_PASS;
 }
-
-
-char _license[] SEC("license") = "GPL";

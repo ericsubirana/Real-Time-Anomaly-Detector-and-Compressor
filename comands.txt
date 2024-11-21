@@ -8,5 +8,15 @@ gcc -o user_prog user_prog.c -lbpf -lelf
 sudo ./user_prog
 
 ip link show dev enp0s3
+bpftool prog show
+bpftool map dump id 2
 
 
+# Callback para procesar eventos del Ring Buffer
+def print_event(cpu, data, size):
+    event = b["ringbuf"].event(data)
+    print(f"Packet captured: timestamp={event.timestamp}, len={event.pkt_len}")
+    print(f"Data (first 64 bytes): {event.data[:64]}")
+
+# Abrir Ring Buffer
+b["ringbuf"].open_ring_buffer(print_event)

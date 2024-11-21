@@ -45,7 +45,7 @@ int main() {
     __u64 free_space_counter = 0; // Declare free_space_counter to store the value
 
     // Load the XDP program and map
-    obj = bpf_object__open_file("packet_capture.o", NULL);
+    obj = bpf_object__open_file("../kernel_space/packet_capture.o", "xdp_prog", NULL);
     if (libbpf_get_error(obj)) {
         fprintf(stderr, "Error opening BPF object file\n");
         return 1;
@@ -70,7 +70,7 @@ int main() {
         fprintf(stderr, "Error creating ring buffer\n");
         return 1;
     }
-    printf("Ring buffer position: %d\n", rb);
+    printf("Ring buffer position: %p\n", (void *)rb);
 
     printf("Listening for packets...\n");
 
