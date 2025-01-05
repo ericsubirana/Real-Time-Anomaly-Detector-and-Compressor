@@ -46,6 +46,7 @@ struct flow_data {
 };
 
 BPF_PERCPU_HASH(flows, struct flow_key, struct flow_data, 1024);
+BPF_PERCPU_HASH(exported_flows, struct flow_key, struct flow_data, 1024);
 
 int capture_packet(struct xdp_md *ctx) {
     struct flow_key key = {};
@@ -106,6 +107,7 @@ try:
 
     def getting_unupdated_flows(threshold_seconds=20, active_timeout=60):
         flows_map = b.get_table("flows")
+        exported_flows_map = b.get_table("exported_flows")
         current_time_ns = time.monotonic_ns()  # Usar monotonic_ns para evitar desincronización
         print(f"Processing flows with idle_timeout={threshold_seconds}s and active_timeout={active_timeout}s:")
 
@@ -132,6 +134,7 @@ try:
                     f"dst_port={key.dst_port}, protocol={key.protocol}, "
                     f"packet_count={total_packets}, idle_duration={idle_duration:.2f}s, "
                     f"active_duration={active_duration:.2f}s")
+                exported_flows_map[key] = per_cpu_data
                 del flows_map[key]  # Eliminar el flujo del mapa
 
 
