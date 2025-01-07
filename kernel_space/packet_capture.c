@@ -17,7 +17,19 @@ struct flow_data {
     __u64 first_seen;
     __u64 last_seen;
     __u32 packet_count;
+    __u64 byte_count;          // Total bytes in the flow
+    __u32 fwd_packet_count;    // Packets from src to dst
+    __u32 bwd_packet_count;    // Packets from dst to src
+    __u64 fwd_byte_count;      // Bytes from src to dst
+    __u64 bwd_byte_count;      // Bytes from dst to src
+    __u16 min_packet_length;
+    __u16 max_packet_length;
+    __u16 syn_count;
+    __u16 ack_count;
+    __u16 psh_count;
+    __u16 urg_count;
 };
+
 
 BPF_PERCPU_HASH(flows, struct flow_key, struct flow_data, 1024);
 BPF_PERCPU_HASH(exported_flows, struct flow_key, struct flow_data, 1024);
@@ -43,11 +55,16 @@ int capture_packet(struct xdp_md *ctx) {
     key.dst_ip = ip->daddr;
     key.protocol = ip->protocol;
 
+    __u16 packet_length = data_end - data_start;
+
     if (key.protocol == IPPROTO_TCP) {
         struct tcphdr *tcp = (struct tcphdr *)(ip + 1);
         if ((void *)tcp + sizeof(*tcp) > data_end) return XDP_PASS;
         key.src_port = tcp->source;
         key.dst_port = tcp->dest;
+
+        // Extract TCP flags
+        __u16 flags = tcp->syn | (tcp->ack << 1) | (tcp->psh << 2) | (tcp->urg << 3);
     } else if (key.protocol == IPPROTO_UDP) {
         struct udphdr *udp = (struct udphdr *)(ip + 1);
         if ((void *)udp + sizeof(*udp) > data_end) return XDP_PASS;
@@ -55,18 +72,40 @@ int capture_packet(struct xdp_md *ctx) {
         key.dst_port = udp->dest;
     }
 
-    // Lookup flow data
+    // Lookup or initialize flow data
     data = flows.lookup(&key);
     if (data) {
-        // Flow exists, update packet count and last seen timestamp
         __sync_fetch_and_add(&data->packet_count, 1);
+        __sync_fetch_and_add(&data->byte_count, packet_length);
         data->last_seen = bpf_ktime_get_ns();
+
+        // Update direction-specific counters
+        if (key.src_ip == ip->saddr) {
+            __sync_fetch_and_add(&data->fwd_packet_count, 1);
+            __sync_fetch_and_add(&data->fwd_byte_count, packet_length);
+        } else {
+            __sync_fetch_and_add(&data->bwd_packet_count, 1);
+            __sync_fetch_and_add(&data->bwd_byte_count, packet_length);
+        }
+
+        // Update packet size metrics
+        if (packet_length < data->min_packet_length || data->min_packet_length == 0)
+            data->min_packet_length = packet_length;
+        if (packet_length > data->max_packet_length)
+            data->max_packet_length = packet_length;
     } else {
-        // Create new flow
         struct flow_data new_data = {};
         new_data.packet_count = 1;
+        new_data.byte_count = packet_length;
         new_data.first_seen = bpf_ktime_get_ns();
         new_data.last_seen = bpf_ktime_get_ns();
+        new_data.min_packet_length = packet_length;
+        new_data.max_packet_length = packet_length;
+        new_data.fwd_packet_count = (key.src_ip == ip->saddr) ? 1 : 0;
+        new_data.bwd_packet_count = (key.src_ip != ip->saddr) ? 1 : 0;
+        new_data.fwd_byte_count = (key.src_ip == ip->saddr) ? packet_length : 0;
+        new_data.bwd_byte_count = (key.src_ip != ip->saddr) ? packet_length : 0;
+
         flows.update(&key, &new_data);
     }
 

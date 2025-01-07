@@ -19,14 +19,26 @@ class FlowKey(ctypes.Structure):
 
 class FlowData(ctypes.Structure):
     _fields_ = [
+        ("first_seen", ctypes.c_uint64),
         ("last_seen", ctypes.c_uint64),
-        ("packet_count", ctypes.c_uint32)
+        ("packet_count", ctypes.c_uint32),
+        ("byte_count", ctypes.c_uint64),          # Total bytes in the flow
+        ("fwd_packet_count", ctypes.c_uint32),    # Packets from src to dst
+        ("bwd_packet_count", ctypes.c_uint32),    # Packets from dst to src
+        ("fwd_byte_count", ctypes.c_uint64),      # Bytes from src to dst
+        ("bwd_byte_count", ctypes.c_uint64),      # Bytes from dst to src
+        ("min_packet_length", ctypes.c_uint16),
+        ("max_packet_length", ctypes.c_uint16),
+        ("syn_count", ctypes.c_uint16),
+        ("ack_count", ctypes.c_uint16),
+        ("psh_count", ctypes.c_uint16),
+        ("urg_count", ctypes.c_uint16)
     ]
 
 try:
     with open("/home/subi/Desktop/TMA_PROJECT/kernel_space/packet_capture.c", "r") as f:
         c_code = f.read()
-    
+
     c_code = f"""{c_code}"""
     b = BPF(text=c_code)
     fn_capture_packet = b.load_func("capture_packet", BPF.XDP)
@@ -35,35 +47,55 @@ try:
     def getting_unupdated_flows(threshold_seconds=20, active_timeout=60):
         flows_map = b.get_table("flows")
         exported_flows_map = b.get_table("exported_flows")
-        current_time_ns = time.monotonic_ns()  # Usar monotonic_ns para evitar desincronización
+        current_time_ns = time.monotonic_ns()  # Use monotonic_ns to avoid desynchronization
         print(f"Processing flows with idle_timeout={threshold_seconds}s and active_timeout={active_timeout}s:")
 
         for key, per_cpu_data in flows_map.items():
             src_ip = inet_ntoa(ctypes.c_uint32(key.src_ip).value.to_bytes(4, 'big'))
             dst_ip = inet_ntoa(ctypes.c_uint32(key.dst_ip).value.to_bytes(4, 'big'))
 
-            # Agregar datos de las CPUs
-            total_packets = sum(cpu_data.packet_count for cpu_data in per_cpu_data)
+            # Collect per-flow information from all CPUs
             last_seen = max(cpu_data.last_seen for cpu_data in per_cpu_data)
             first_seen = min(cpu_data.first_seen for cpu_data in per_cpu_data if cpu_data.first_seen > 0)
 
-            # Validar que `first_seen` tenga sentido
+            # Validate that `first_seen` makes sense
             if first_seen == 0 or first_seen > current_time_ns:
                 print(f"Warning: Invalid first_seen value for flow: src_ip={src_ip}, dst_ip={dst_ip}")
                 continue
 
-            # Calcular duraciones
+            # Calculate durations
             idle_duration = (current_time_ns - last_seen) / 1e9
             active_duration = (current_time_ns - first_seen) / 1e9
 
+            # Check if the flow should be exported
             if idle_duration > threshold_seconds or active_duration > active_timeout:
-                print(f"Exporting flow: src_ip={src_ip}, dst_ip={dst_ip}, src_port={key.src_port}, "
-                    f"dst_port={key.dst_port}, protocol={key.protocol}, "
-                    f"packet_count={total_packets}, idle_duration={idle_duration:.2f}s, "
-                    f"active_duration={active_duration:.2f}s")
-                exported_flows_map[key] = per_cpu_data
-                del flows_map[key]  # Eliminar el flujo del mapa
+                # Perform the summing operations only when the flow is exported
+                total_packets = sum(cpu_data.packet_count for cpu_data in per_cpu_data)
+                total_byte_count = sum(cpu_data.byte_count for cpu_data in per_cpu_data)
+                fwd_packet_count = sum(cpu_data.fwd_packet_count for cpu_data in per_cpu_data)
+                bwd_packet_count = sum(cpu_data.bwd_packet_count for cpu_data in per_cpu_data)
+                fwd_byte_count = sum(cpu_data.fwd_byte_count for cpu_data in per_cpu_data)
+                bwd_byte_count = sum(cpu_data.bwd_byte_count for cpu_data in per_cpu_data)
+                min_packet_length = min(cpu_data.min_packet_length for cpu_data in per_cpu_data)
+                max_packet_length = max(cpu_data.max_packet_length for cpu_data in per_cpu_data)
+                syn_count = sum(cpu_data.syn_count for cpu_data in per_cpu_data)
+                ack_count = sum(cpu_data.ack_count for cpu_data in per_cpu_data)
+                psh_count = sum(cpu_data.psh_count for cpu_data in per_cpu_data)
+                urg_count = sum(cpu_data.urg_count for cpu_data in per_cpu_data)
 
+                print(f"Exporting flow: src_ip={src_ip}, dst_ip={dst_ip}, src_port={key.src_port}, "
+                      f"dst_port={key.dst_port}, protocol={key.protocol}, "
+                      f"packet_count={total_packets}, byte_count={total_byte_count}, "
+                      f"fwd_packet_count={fwd_packet_count}, bwd_packet_count={bwd_packet_count}, "
+                      f"fwd_byte_count={fwd_byte_count}, bwd_byte_count={bwd_byte_count}, "
+                      f"min_packet_length={min_packet_length}, max_packet_length={max_packet_length}, "
+                      f"syn_count={syn_count}, ack_count={ack_count}, psh_count={psh_count}, "
+                      f"urg_count={urg_count}, idle_duration={idle_duration:.2f}s, "
+                      f"active_duration={active_duration:.2f}s")
+
+                # Export the flow and remove from the flows map
+                exported_flows_map[key] = per_cpu_data
+                del flows_map[key]  # Remove flow from map
 
     def periodic_print_flows(interval):
         def print_and_reschedule():
@@ -73,7 +105,8 @@ try:
         print_and_reschedule()
 
     # Start the periodic function
-    periodic_print_flows(3) 
+    periodic_print_flows(3)
+
 except KeyboardInterrupt:
     b.remove_xdp(dev="enp0s3", flags=0)
     sys.exit()
