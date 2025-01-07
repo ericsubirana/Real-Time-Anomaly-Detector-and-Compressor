@@ -1,1 +1,1 @@
-sudo python3 user_space/network.py
+sudo python3 user_space/anomaly_detector.py
