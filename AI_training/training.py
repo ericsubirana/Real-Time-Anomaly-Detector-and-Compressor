@@ -8,7 +8,7 @@ import os
 
 # Path to the model file
 model_file = "incremental_model.joblib"
-
+scaler_file = "scaler.joblib"
 # Load the CSV file
 def load_dataset(csv_file):
     # Load dataset
@@ -38,9 +38,6 @@ def load_dataset(csv_file):
 
     df.columns = column_names
 
-    # Remove this line since there are no IP columns in the dataset
-    # df = df.drop(columns=["src_ip", "dst_ip", "Stime", "Ltime"])
-
     # Handle missing values
     df.fillna(0, inplace=True)
 
@@ -64,23 +61,27 @@ def load_dataset(csv_file):
     return df
 
 # Preprocess the dataset
-def preprocess_data(df):
+def preprocess_data(df, scaler=None):
     # Separate features and labels
-    y = df["Label"].apply(lambda x: 1 if x == "BENIGN" else 0).to_numpy()  # Convert to a 1D numpy array
+    y = df["Label"].apply(lambda x: 1 if x == "BENIGN" else 0).to_numpy()
     X = df.drop(columns=["Label"])
+
     # Encode categorical features
     categorical_columns = X.select_dtypes(include=["object"]).columns
     label_encoders = {}
     for col in categorical_columns:
         le = LabelEncoder()
-        X[col] = le.fit_transform(X[col].astype(str))  # Ensure it's a 1D array
+        X[col] = le.fit_transform(X[col].astype(str))
         label_encoders[col] = le
 
-    # Normalize the features for incremental learning
-    scaler = StandardScaler()
-    X = scaler.fit_transform(X)
+    # Normalize the features
+    if scaler is None:
+        scaler = StandardScaler()
+        X = scaler.fit_transform(X)
+    else:
+        X = scaler.transform(X)
 
-    return X, y, scaler, label_encoders  # Y is TARGET and X is Features
+    return X, y, scaler, label_encoders
 
 # Load or initialize the model
 def load_or_initialize_model(input_dim):
@@ -89,21 +90,38 @@ def load_or_initialize_model(input_dim):
         model = load(model_file)
     else:
         print("No existing model found. Training a new one...")
-        model = SGDClassifier(loss="log_loss", random_state=42)  # Logistic Regression with SGD
+        model = SGDClassifier(loss="log_loss", random_state=42)  # Use 'log' for logistic regression
     return model
+
+def load_or_initialize_scaler():
+    if os.path.exists(scaler_file):
+        print("Loading existing scaler...")
+        scaler = load(scaler_file)
+    else:
+        print("No existing scaler found. Creating a new one...")
+        scaler = None
+    return scaler
 
 # Main training and saving logic
 def train_and_save_model(csv_file):
     # Load and preprocess the data
     df = load_dataset(csv_file)
-    X, y, scaler, label_encoders = preprocess_data(df)
+
+    # Load or initialize the scaler
+    scaler = load_or_initialize_scaler()
+    X, y, scaler, label_encoders = preprocess_data(df, scaler)
+
+    # Save the scaler
+    if scaler and not os.path.exists(scaler_file):
+        dump(scaler, scaler_file)
+        print(f"Scaler saved to {scaler_file}")
 
     # Load or initialize the model
     clf = load_or_initialize_model(X.shape[1])
 
     # Incrementally train the model
     print("Incrementally training the model...")
-    clf.partial_fit(X, y, classes=[0, 1])  # ensures the previously learned patterns are retained while adding new knowledge.
+    clf.partial_fit(X, y, classes=[0, 1])
 
     # Save the model
     dump(clf, model_file)
@@ -132,5 +150,3 @@ if __name__ == "__main__":
     for csv_file in file_names:
         file_path = f"archive/{csv_file}"
         train_and_save_model(file_path)
-
-        
