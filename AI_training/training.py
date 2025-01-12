@@ -43,16 +43,29 @@ def load_dataset(csv_file):
     # Select only the relevant columns for your task
     selected_columns = [
         'Flow Packets/s',
-        'Total Length of Fwd Packets',
+        'Flow Bytes/s',
         'Total Fwd Packets',
         'Total Backward Packets',
+        'Total Length of Fwd Packets',
         'Total Length of Bwd Packets',
         'Min Packet Length',
         'Max Packet Length',
+        'Packet Length Variance',
+        'Flow Duration',
+        'Flow IAT Min',
+        'Flow IAT Max',
+        'Fwd IAT Total',
+        'Fwd IAT Min',
+        'Fwd IAT Max',
+        'Bwd IAT Total',
+        'Bwd IAT Min',
+        'Bwd IAT Max',
         'SYN Flag Count',
         'ACK Flag Count',
         'PSH Flag Count',
         'URG Flag Count',
+        'FIN Flag Count',
+        'RST Flag Count',
         "Label"
     ]
     df = df[selected_columns]
