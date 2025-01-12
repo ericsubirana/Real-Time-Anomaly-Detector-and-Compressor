@@ -10,7 +10,7 @@ import numpy as np
 from joblib import load
 
 # Load the trained model
-model_file = "../AI_training/incremental_model.joblib"
+model_file = "/home/subi/Desktop/TMA_PROJECT/AI_training/incremental_model.joblib"
 clf = load(model_file)
 
 def preprocess_flow_for_ai(flow_data):
@@ -61,9 +61,8 @@ def preprocess_flow_for_ai(flow_data):
     
     # Normalize and preprocess the features (ensure they match your training data format)
     # For simplicity, assume the model expects these features to be normalized as you did in preprocessing
-    scaler = load("../AI_training/scaler.joblib")  # Assuming you saved your scaler during training
+    scaler = load("/home/subi/Desktop/TMA_PROJECT/AI_training/scaler.joblib")  # Assuming you saved your scaler during training
     features = np.array(features).reshape(1, -1)
-    print(features)
     features = scaler.transform(features)
     
     return features
@@ -76,7 +75,7 @@ def predict_flow_behavior(flow_data):
     prediction = clf.predict(features)
     
     # Return the prediction result
-    return "BENIGN" if prediction == 1 else "GOOD"
+    return "BENIGN" if prediction == 1 else "ANOMALY DETECTED"
 
 # Define ctypes structure for flow_key and flow_data
 class FlowKey(ctypes.Structure):
@@ -190,7 +189,7 @@ try:
 
                 print(f"Flow from {src_ip} to {dst_ip} is: {prediction}")
 
-                if prediction == "BENIGN":
+                if prediction == "ANOMALY DETECTED":
                     print(f"ALERT: Anomalous flow detected from {src_ip} to {dst_ip}!")
                 else:
                     print(f"Flow from {src_ip} to {dst_ip} is: {prediction}")

@@ -14,7 +14,6 @@ def load_dataset(csv_file):
     # Load dataset
     df = pd.read_csv(csv_file, header=None)
 
-    # Define column names (assuming UNSW-NB15 format)
     column_names = [
         "Destination Port", "Flow Duration", "Total Fwd Packets", "Total Backward Packets",
         "Total Length of Fwd Packets", "Total Length of Bwd Packets", "Fwd Packet Length Max",
@@ -63,7 +62,7 @@ def load_dataset(csv_file):
 # Preprocess the dataset
 def preprocess_data(df, scaler=None):
     # Separate features and labels
-    y = df["Label"].apply(lambda x: 1 if x == "BENIGN" else 0).to_numpy()
+    y = df["Label"].apply(lambda x: 1 if x == "BENIGN" else 0).to_numpy() #1 GOOD | 0 BAD
     X = df.drop(columns=["Label"])
 
     # Encode categorical features
