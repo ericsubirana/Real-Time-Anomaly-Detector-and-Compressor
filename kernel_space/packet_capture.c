@@ -113,7 +113,7 @@ int capture_packet(struct xdp_md *ctx) {
         data = flows.lookup(&key);
     
         if (data) {            
-            __u64 now = bpf_ktime_get_ns();
+            __u64 now = bpf_ktime_get_ns() / 1000;
             __u64 iat = now - data->last_seen;
             
             __sync_fetch_and_add(&data->packet_count, 1);
@@ -166,7 +166,7 @@ int capture_packet(struct xdp_md *ctx) {
         } else {
             //new flow
             struct flow_data new_data = {};
-            __u64 now = bpf_ktime_get_ns();
+            __u64 now = bpf_ktime_get_ns() / 1000;
 
             // Timestamps
             new_data.first_seen = now;
@@ -230,7 +230,7 @@ int capture_packet(struct xdp_md *ctx) {
         if (data) {
             __sync_fetch_and_add(&data->packet_count, 1);
             __sync_fetch_and_add(&data->byte_count, packet_length);
-            data->last_seen = bpf_ktime_get_ns();
+            data->last_seen = bpf_ktime_get_ns() / 1000;
             data->flow_duration = data->last_seen - data->first_seen;
 
             // Directional metrics
@@ -249,7 +249,7 @@ int capture_packet(struct xdp_md *ctx) {
                 data->max_packet_length = packet_length;
 
             // Inter-arrival times
-            __u64 now = bpf_ktime_get_ns();
+            __u64 now = bpf_ktime_get_ns() / 1000;
             __u64 iat = now - data->last_seen;
             data->flow_iat_total += iat;
             if (iat < data->flow_iat_min || data->flow_iat_min == 0)
@@ -262,8 +262,8 @@ int capture_packet(struct xdp_md *ctx) {
             struct flow_data new_data = {};
             new_data.packet_count = 1;
             new_data.byte_count = packet_length;
-            new_data.first_seen = bpf_ktime_get_ns();
-            new_data.last_seen = bpf_ktime_get_ns();
+            new_data.first_seen = bpf_ktime_get_ns() / 1000;
+            new_data.last_seen = bpf_ktime_get_ns() / 1000;
             new_data.min_packet_length = packet_length;
             new_data.max_packet_length = packet_length;
             new_data.fwd_packet_count = (key.src_ip == ip->saddr) ? 1 : 0;

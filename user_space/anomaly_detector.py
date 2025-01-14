@@ -170,10 +170,10 @@ try:
     fn_capture_packet = b.load_func("capture_packet", BPF.XDP)
     b.attach_xdp(dev="enp0s3", fn=fn_capture_packet, flags=0)
 
-    def getting_unupdated_flows(threshold_seconds=20, active_timeout=60):
+    def getting_unupdated_flows(threshold_seconds=5, active_timeout=60):
         flows_map = b.get_table("flows")
         exported_flows_map = b.get_table("exported_flows")
-        current_time_ns = time.monotonic_ns()  # Use monotonic_ns to avoid desynchronization
+        current_time_mcs = time.monotonic_ns() / 1000  # Use monotonic_ns to avoid desynchronization
         print(f"Processing flows with idle_timeout={threshold_seconds}s and active_timeout={active_timeout}s:")
 
         for key, per_cpu_data in flows_map.items():
@@ -185,13 +185,13 @@ try:
             first_seen = min(cpu_data.first_seen for cpu_data in per_cpu_data if cpu_data.first_seen > 0)
 
             # Validate that `first_seen` makes sense
-            if first_seen == 0 or first_seen > current_time_ns:
+            if first_seen == 0 or first_seen > current_time_mcs:
                 print(f"Warning: Invalid first_seen value for flow: src_ip={src_ip}, dst_ip={dst_ip}")
                 continue
 
             # Calculate durations
-            idle_duration = (current_time_ns - last_seen) / 1e9
-            active_duration = (current_time_ns - first_seen) / 1e9
+            idle_duration = (current_time_mcs - last_seen) / 1e6
+            active_duration = (current_time_mcs - first_seen) / 1e6
 
             # Check if the flow should be exported
             if idle_duration > threshold_seconds or active_duration > active_timeout:
@@ -226,13 +226,14 @@ try:
                 fin_count = sum(cpu_data.fin_count for cpu_data in per_cpu_data)
                 rst_count = sum(cpu_data.rst_count for cpu_data in per_cpu_data)
 
-                print(f"Exporting flow: src_ip={src_ip}, dst_ip={dst_ip}, src_port={key.src_port}, "
+                if(src_ip == dst_ip):
+                    print(f"Exporting flow: src_ip={src_ip}, dst_ip={dst_ip}, src_port={key.src_port}, "
                         f"dst_port={key.dst_port}, protocol={key.protocol}, "
                         f"packet_count={total_packets}, byte_count={total_byte_count}, "
                         f"fwd_packet_count={fwd_packet_count}, bwd_packet_count={bwd_packet_count}, "
                         f"fwd_byte_count={fwd_byte_count}, bwd_byte_count={bwd_byte_count}, "
                         f"min_packet_length={min_packet_length}, max_packet_length={max_packet_length}, "
-                        f"packet_length_square_sum={packet_length_square_sum}, flow_duration={flow_duration:.2f}s, "
+                        f"packet_length_square_sum={packet_length_square_sum}, flow_duration={flow_duration/1e6}s, "
                         f"flow_iat_total={flow_iat_total}, flow_iat_min={flow_iat_min}, flow_iat_max={flow_iat_max}, "
                         f"fwd_iat_total={fwd_iat_total}, fwd_iat_min={fwd_iat_min}, fwd_iat_max={fwd_iat_max}, "
                         f"bwd_iat_total={bwd_iat_total}, bwd_iat_min={bwd_iat_min}, bwd_iat_max={bwd_iat_max}, "
