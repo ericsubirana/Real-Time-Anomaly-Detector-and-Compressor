@@ -16,7 +16,10 @@ BPF_TARGET = ${TARGET:=_kern}
 BPF_C = ${BPF_TARGET:=.c}
 BPF_OBJ = ${BPF_C:.c=.o}
 
+.PHONY: user
+
 user: $(BPF_OBJ) $(skel) $(USER_TARGET)
+
 	
 xdp: $(BPF_OBJ)
 	bpftool net detach xdpgeneric dev eth0
