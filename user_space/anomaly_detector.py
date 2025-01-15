@@ -168,7 +168,7 @@ try:
     c_code = f"""{c_code}"""
     b = BPF(text=c_code)
     fn_capture_packet = b.load_func("capture_packet", BPF.XDP)
-    b.attach_xdp(dev="enp0s3", fn=fn_capture_packet, flags=0)
+    b.attach_xdp(dev="enp0s8", fn=fn_capture_packet, flags=0)
 
     def getting_unupdated_flows(threshold_seconds=5, active_timeout=60):
         flows_map = b.get_table("flows")
@@ -226,20 +226,19 @@ try:
                 fin_count = sum(cpu_data.fin_count for cpu_data in per_cpu_data)
                 rst_count = sum(cpu_data.rst_count for cpu_data in per_cpu_data)
 
-                if(src_ip == dst_ip):
-                    print(f"Exporting flow: src_ip={src_ip}, dst_ip={dst_ip}, src_port={key.src_port}, "
-                        f"dst_port={key.dst_port}, protocol={key.protocol}, "
-                        f"packet_count={total_packets}, byte_count={total_byte_count}, "
-                        f"fwd_packet_count={fwd_packet_count}, bwd_packet_count={bwd_packet_count}, "
-                        f"fwd_byte_count={fwd_byte_count}, bwd_byte_count={bwd_byte_count}, "
-                        f"min_packet_length={min_packet_length}, max_packet_length={max_packet_length}, "
-                        f"packet_length_square_sum={packet_length_square_sum}, flow_duration={flow_duration/1e6}s, "
-                        f"flow_iat_total={flow_iat_total}, flow_iat_min={flow_iat_min}, flow_iat_max={flow_iat_max}, "
-                        f"fwd_iat_total={fwd_iat_total}, fwd_iat_min={fwd_iat_min}, fwd_iat_max={fwd_iat_max}, "
-                        f"bwd_iat_total={bwd_iat_total}, bwd_iat_min={bwd_iat_min}, bwd_iat_max={bwd_iat_max}, "
-                        f"syn_count={syn_count}, ack_count={ack_count}, psh_count={psh_count}, "
-                        f"urg_count={urg_count}, fin_count={fin_count}, rst_count={rst_count}, "
-                        f"idle_duration={idle_duration:.2f}s, active_duration={active_duration:.2f}s")
+                # print(f"Exporting flow: src_ip={src_ip}, dst_ip={dst_ip}, src_port={key.src_port}, "
+                #     f"dst_port={key.dst_port}, protocol={key.protocol}, "
+                #     f"packet_count={total_packets}, byte_count={total_byte_count}, "
+                #     f"fwd_packet_count={fwd_packet_count}, bwd_packet_count={bwd_packet_count}, "
+                #     f"fwd_byte_count={fwd_byte_count}, bwd_byte_count={bwd_byte_count}, "
+                #     f"min_packet_length={min_packet_length}, max_packet_length={max_packet_length}, "
+                #     f"packet_length_square_sum={packet_length_square_sum}, flow_duration={flow_duration/1e6}s, "
+                #     f"flow_iat_total={flow_iat_total}, flow_iat_min={flow_iat_min}, flow_iat_max={flow_iat_max}, "
+                #     f"fwd_iat_total={fwd_iat_total}, fwd_iat_min={fwd_iat_min}, fwd_iat_max={fwd_iat_max}, "
+                #     f"bwd_iat_total={bwd_iat_total}, bwd_iat_min={bwd_iat_min}, bwd_iat_max={bwd_iat_max}, "
+                #     f"syn_count={syn_count}, ack_count={ack_count}, psh_count={psh_count}, "
+                #     f"urg_count={urg_count}, fin_count={fin_count}, rst_count={rst_count}, "
+                #     f"idle_duration={idle_duration:.2f}s, active_duration={active_duration:.2f}s")
 
                 # Export the flow and remove from the flows map
                 new_data = FlowData(
@@ -273,7 +272,6 @@ try:
                     idle_duration=idle_duration,
                     active_duration=active_duration
                 )
-
                 exported_flows_map[key] = new_data
 
                 prediction = predict_flow_behavior(exported_flows_map[key])
@@ -284,6 +282,7 @@ try:
                     print(f"ALERT: Anomalous flow detected from {src_ip} to {dst_ip}!")
                 else:
                     print(f"Flow from {src_ip} to {dst_ip} is: {prediction}")
+                    del exported_flows_map[key]  # Remove normal flow from map
                 del flows_map[key]  # Remove flow from map
 
     def periodic_print_flows(interval):
@@ -293,9 +292,29 @@ try:
 
         print_and_reschedule()
 
-    # Start the periodic function
+    input_value = b.get_table("input_value")
+    key = 0
+    new_value = input("Enter a packet sampling rate in % (0-100):\n")
+    try:
+        # Try to convert input to integer and ensure it falls within the valid range
+        new_value = int(new_value)
+        
+        if 0 <= new_value <= 100:
+            # Update the value at the given key/index
+            key_ctypes = ctypes.c_uint32(0)
+            new_value_ctypes = ctypes.c_uint32(new_value) # packet sample rate
+            
+            # Update the map element using the proper ctypes instances
+            input_value[key_ctypes] = new_value_ctypes
+            print(f"Updated sampling rate to {new_value}%")
+        else:
+            print("Error: Please enter a value between 0 and 100.")
+    
+    except ValueError:
+        print("Error: Please enter a valid integer value.")
+        
     periodic_print_flows(3)
 
 except KeyboardInterrupt:
-    b.remove_xdp(dev="enp0s3", flags=0)
+    b.remove_xdp(dev="enp0s8", flags=0)
     sys.exit()
