@@ -5,6 +5,9 @@
 #include <linux/udp.h>
 #include <linux/icmp.h>
 
+/*
+ * flow_key: uniquely identifies a flow by source/destination IP and port, plus protocol.
+ */
 struct flow_key {
     __u32 src_ip;
     __u32 dst_ip;
@@ -13,6 +16,10 @@ struct flow_key {
     __u8 protocol;
 };
 
+/*
+ * flow_data: stores various metrics for a particular flow, including byte counts,
+ * packet counts, timestamps, inter-arrival times, and TCP flags.
+ */
 struct flow_data {
     __u64 first_seen;
     __u64 last_seen;
@@ -43,10 +50,19 @@ struct flow_data {
     __u32 rst_count;
 };
 
+/*
+ * BPF maps:
+ *  1) flows: per-CPU map to track flow_data per flow_key
+ *  2) exported_flows: per-CPU map for flows that have been marked for exporting
+ *  3) input_value: array storing the user-defined packet sampling rate in index 0
+ */
 BPF_PERCPU_HASH(flows, struct flow_key, struct flow_data, 1024); //for flow metrics
 BPF_PERCPU_HASH(exported_flows, struct flow_key, struct flow_data, 1024); //for anomaly detection
 BPF_PERCPU_ARRAY(input_value, __u32, 1); //for packet sampling
 
+/*
+ * parse_ethhdr: safely parse Ethernet header from XDP context.
+ */
 static __always_inline int parse_ethhdr(struct xdp_md *ctx, struct ethhdr **eth_hdr) {
     void *data_end = (void *)(long)ctx->data_end;
     void *data_start = (void *)(long)ctx->data;
@@ -57,6 +73,9 @@ static __always_inline int parse_ethhdr(struct xdp_md *ctx, struct ethhdr **eth_
     return 0;
 }
 
+/*
+ * parse_iphdr: verify if it's an IPv4 packet and safely parse IP header.
+ */
 static __always_inline int parse_iphdr(struct xdp_md *ctx, struct ethhdr *eth, struct iphdr **ip_hdr) {
     void *data_end = (void *)(long)ctx->data_end;
 
@@ -69,6 +88,9 @@ static __always_inline int parse_iphdr(struct xdp_md *ctx, struct ethhdr *eth, s
     return 0;
 }
 
+/*
+ * parse_tcphdr: safely parse TCP header.
+ */
 static __always_inline int parse_tcphdr(struct xdp_md *ctx, struct iphdr *ip, struct tcphdr **tcp_hdr) {
     void *data_end = (void *)(long)ctx->data_end;
 
@@ -78,6 +100,9 @@ static __always_inline int parse_tcphdr(struct xdp_md *ctx, struct iphdr *ip, st
     return 0;
 }
 
+/*
+ * parse_udphdr: safely parse UDP header.
+ */
 static __always_inline int parse_udphdr(struct xdp_md *ctx, struct iphdr *ip, struct udphdr **udp_hdr) {
     void *data_end = (void *)(long)ctx->data_end;
 
@@ -87,6 +112,9 @@ static __always_inline int parse_udphdr(struct xdp_md *ctx, struct iphdr *ip, st
     return 0;
 }
 
+/*
+ * parse_icmphdr: safely parse ICMP header.
+ */
 static __always_inline int parse_icmphdr(struct xdp_md *ctx, struct iphdr *ip, struct icmphdr **icmp_hdr) {
     void *data_end = (void *)(long)ctx->data_end;
 
@@ -96,6 +124,9 @@ static __always_inline int parse_icmphdr(struct xdp_md *ctx, struct iphdr *ip, s
     return 0;
 }
 
+/*
+ * update_flow_metrics_icmp: update general metrics for ICMP-based flows.
+ */
 static __always_inline void update_flow_metrics_icmp(struct flow_data *data, __u16 packet_length, __u64 now, __u64 iat) {
     // Al igual que en TCP y UDP, actualizamos las métricas para ICMP.
     __sync_fetch_and_add(&data->packet_count, 1);
@@ -112,6 +143,10 @@ static __always_inline void update_flow_metrics_icmp(struct flow_data *data, __u
         data->flow_iat_max = iat;
 }
 
+/*
+ * update_flow_metrics: update flow metrics for TCP/UDP flows,
+ * including directional counters and packet length stats.
+ */
 static __always_inline void update_flow_metrics(struct flow_data *data, __u16 packet_length, __u64 now, __u64 iat, bool is_forward) {
     // Update general metrics
     __sync_fetch_and_add(&data->packet_count, 1);
@@ -155,6 +190,9 @@ static __always_inline void update_flow_metrics(struct flow_data *data, __u16 pa
         data->flow_iat_max = iat;
 }
 
+/*
+ * new_flow: initialize a new flow_data entry when a flow_key is first observed.
+ */
 static __always_inline void new_flow(struct flow_key *key, __u16 packet_length, __u32 src_ip, __u64 now, bool is_forward, __u8 protocol) {
     struct flow_data new_data = {};
 
@@ -207,6 +245,10 @@ static __always_inline void new_flow(struct flow_key *key, __u16 packet_length, 
     flows.update(key, &new_data);
 }
 
+/*
+ * capture_packet: main XDP program. Parses headers, checks sampling rate,
+ * updates flow metrics, and creates new flows if needed.
+ */
 int capture_packet(struct xdp_md *ctx) {
     struct ethhdr *eth;
     if (parse_ethhdr(ctx, &eth) < 0)

@@ -12,6 +12,7 @@ import pandas as pd
 from joblib import load
 from arithmetic_compression import AdaptiveArithmeticCodingFlows
 
+# Files and model/scaler loading
 MODEL_FILE = os.path.join("AI_training", "incremental_model.joblib")
 SCALER_FILE = os.path.join("AI_training", "scaler.joblib")
 PACKET_CAPTURE_FILE = os.path.join("kernel_space", "packet_capture.c")
@@ -28,7 +29,10 @@ accumulated_key_frequencies = {}
 accumulated_data_frequencies = {}
 
 def preprocess_flow_for_ai(flow_data):
-    # Extract features 
+    """
+    Aggregate and transform flow data from all CPUs into a single feature vector,
+    then scale it using the saved scaler (SCALER_FILE).
+    """
     total_packets = sum(cpu_data.packet_count for cpu_data in flow_data)
     total_byte_count = sum(cpu_data.byte_count for cpu_data in flow_data)
     fwd_packet_count = sum(cpu_data.fwd_packet_count for cpu_data in flow_data)
@@ -87,7 +91,6 @@ def preprocess_flow_for_ai(flow_data):
         rst_count
     ]
 
-    #FUTURE IMPLEMETNATION 
     column_names = [
         'Flow Duration',
         'Total Fwd Packets',
@@ -118,19 +121,19 @@ def preprocess_flow_for_ai(flow_data):
     features_df = pd.DataFrame([features], columns=column_names)
     
     # Normalize and preprocess the features (ensure they match your training data format)
-    scaler = load(SCALER_FILE)  # Assuming you saved your scaler during training
+    scaler = load(SCALER_FILE) 
     features_scaled = scaler.transform(features_df)
     
     return features_scaled
 
 def predict_flow_behavior(flow_data):
-    # Preprocess the flow data for the model
+    """
+    Use the trained model to predict whether the aggregated flow data
+    indicates a benign flow or an anomaly.
+    """
     features = preprocess_flow_for_ai(flow_data)
-    
-    # Make a prediction
     prediction = clf.predict(features)
     
-    # Return the prediction result
     return "BENIGN" if prediction == 1 else "ANOMALY DETECTED"
 
 # Define ctypes structure for flow_key and flow_data
@@ -175,6 +178,7 @@ class FlowData(ctypes.Structure):
     ]
 
 try:
+    # Load the eBPF C code from file and attach the XDP hook
     with open(PACKET_CAPTURE_FILE, "r") as f:
         c_code = f.read()
 
@@ -184,9 +188,13 @@ try:
     b.attach_xdp(dev="enp0s8", fn=fn_capture_packet, flags=0)
 
     def getting_unupdated_flows(threshold_seconds=5, active_timeout=60):
+        """
+        Check flows in the 'flows' map. If a flow exceeds the idle or active timeout,
+        move it to 'exported_flows' map, make a prediction, and compress anomaly data.
+        """
         flows_map = b.get_table("flows")
         exported_flows_map = b.get_table("exported_flows")
-        current_time_mcs = time.monotonic_ns() / 1000  # Use monotonic_ns to avoid desynchronization
+        current_time_mcs = time.monotonic_ns() / 1000 
         print(f"Processing flows with idle_timeout={threshold_seconds}s and active_timeout={active_timeout}s:")
 
         for key, per_cpu_data in flows_map.items(): 
@@ -212,7 +220,6 @@ try:
 
             # Check if the flow should be exported
             if idle_duration > threshold_seconds or active_duration > active_timeout:
-                #Perform the summing operations only when the flow is exported
                 total_packets = sum(cpu_data.packet_count for cpu_data in per_cpu_data)
                 total_byte_count = sum(cpu_data.byte_count for cpu_data in per_cpu_data)
                 fwd_packet_count = sum(cpu_data.fwd_packet_count for cpu_data in per_cpu_data)
@@ -335,12 +342,16 @@ try:
         accumulated_data_frequencies.clear()
 
     def periodic_print_flows(interval):
+        """
+        Periodically call export_expired_flows() to check and handle flows.
+        """
         def print_and_reschedule():
             getting_unupdated_flows()
             threading.Timer(interval, print_and_reschedule).start()
 
         print_and_reschedule()
 
+    # Prompt the user for a sampling rate and update the eBPF map
     input_value = b.get_table("input_value")
     key = 0
     new_value = input("Enter a packet sampling rate in % (0-100):\n")

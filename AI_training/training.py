@@ -12,7 +12,10 @@ model_file = "incremental_model.joblib"
 scaler_file = "scaler.joblib"
 # Load the CSV file
 def load_dataset(csv_file):
-    # Load dataset
+    """
+    Load a CSV dataset and select relevant columns for training.
+    Missing values are filled with 0. Rows with NaN are dropped.
+    """
     df = pd.read_csv(csv_file, header=None, low_memory=False)
 
     column_names = [
@@ -84,7 +87,11 @@ def load_dataset(csv_file):
 
 # Preprocess the dataset
 def preprocess_data(df, scaler=None):
-    # Separate features and labels
+    """
+    Split into features (X) and labels (y). Convert 'BENIGN' to 1 and
+    anything else to 0. Apply LabelEncoder to categorical columns if needed,
+    and apply (or fit) a scaler.
+    """
     print(df["Flow Duration"])
     y = df["Label"].apply(lambda x: 1 if x == "BENIGN" else 0).to_numpy() #1 GOOD | 0 BAD
     X = df.drop(columns=["Label"])
@@ -109,8 +116,10 @@ def preprocess_data(df, scaler=None):
 
     return X, y, scaler, label_encoders
 
-# Load or initialize the model
 def load_or_initialize_model(input_dim):
+    """
+    Load the existing model if found; otherwise create a new SGDClassifier.
+    """
     if os.path.exists(model_file):
         print("Loading existing model...")
         model = load(model_file)
@@ -120,6 +129,9 @@ def load_or_initialize_model(input_dim):
     return model
 
 def load_or_initialize_scaler():
+    """
+    Load the existing scaler if found; otherwise, return None for a fresh start.
+    """
     if os.path.exists(scaler_file):
         print("Loading existing scaler...")
         scaler = load(scaler_file)
@@ -128,9 +140,11 @@ def load_or_initialize_scaler():
         scaler = None
     return scaler
 
-# Main training and saving logic
 def train_and_save_model(csv_file):
-    # Load and preprocess the data
+    """
+    Load data from csv_file, preprocess, optionally fit an existing scaler,
+    incrementally train the model, and save both model and scaler.
+    """
     df = load_dataset(csv_file)
 
     # Load or initialize the scaler
