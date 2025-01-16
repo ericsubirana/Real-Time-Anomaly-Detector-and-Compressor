@@ -7,13 +7,16 @@ import threading
 from socket import inet_ntoa
 from bcc import BPF
 import numpy as np
+import os
 import pandas as pd
 from joblib import load
 from arithmetic_compression import AdaptiveArithmeticCodingFlows
 
-# Load the trained model
-model_file = "/home/subi/Desktop/TMA_PROJECT/AI_training/incremental_model.joblib"
-clf = load(model_file)
+MODEL_FILE = os.path.join("AI_training", "incremental_model.joblib")
+SCALER_FILE = os.path.join("AI_training", "scaler.joblib")
+PACKET_CAPTURE_FILE = os.path.join("kernel_space", "packet_capture.c")
+
+clf = load(MODEL_FILE)
 
 # Initialize the compression class
 compression = AdaptiveArithmeticCodingFlows(precision=32)
@@ -115,7 +118,7 @@ def preprocess_flow_for_ai(flow_data):
     features_df = pd.DataFrame([features], columns=column_names)
     
     # Normalize and preprocess the features (ensure they match your training data format)
-    scaler = load("/home/subi/Desktop/TMA_PROJECT/AI_training/scaler.joblib")  # Assuming you saved your scaler during training
+    scaler = load(SCALER_FILE)  # Assuming you saved your scaler during training
     features_scaled = scaler.transform(features_df)
     
     return features_scaled
@@ -172,7 +175,7 @@ class FlowData(ctypes.Structure):
     ]
 
 try:
-    with open("/home/subi/Desktop/TMA_PROJECT/kernel_space/packet_capture.c", "r") as f:
+    with open(PACKET_CAPTURE_FILE, "r") as f:
         c_code = f.read()
 
     c_code = f"""{c_code}"""
@@ -239,20 +242,6 @@ try:
                 urg_count = sum(cpu_data.urg_count for cpu_data in per_cpu_data)
                 fin_count = sum(cpu_data.fin_count for cpu_data in per_cpu_data)
                 rst_count = sum(cpu_data.rst_count for cpu_data in per_cpu_data)
-
-                # print(f"Exporting flow: src_ip={src_ip}, dst_ip={dst_ip}, src_port={key.src_port}, "
-                #     f"dst_port={key.dst_port}, protocol={key.protocol}, "
-                #     f"packet_count={total_packets}, byte_count={total_byte_count}, "
-                #     f"fwd_packet_count={fwd_packet_count}, bwd_packet_count={bwd_packet_count}, "
-                #     f"fwd_byte_count={fwd_byte_count}, bwd_byte_count={bwd_byte_count}, "
-                #     f"min_packet_length={min_packet_length}, max_packet_length={max_packet_length}, "
-                #     f"packet_length_square_sum={packet_length_square_sum}, flow_duration={flow_duration/1e6}s, "
-                #     f"flow_iat_total={flow_iat_total}, flow_iat_min={flow_iat_min}, flow_iat_max={flow_iat_max}, "
-                #     f"fwd_iat_total={fwd_iat_total}, fwd_iat_min={fwd_iat_min}, fwd_iat_max={fwd_iat_max}, "
-                #     f"bwd_iat_total={bwd_iat_total}, bwd_iat_min={bwd_iat_min}, bwd_iat_max={bwd_iat_max}, "
-                #     f"syn_count={syn_count}, ack_count={ack_count}, psh_count={psh_count}, "
-                #     f"urg_count={urg_count}, fin_count={fin_count}, rst_count={rst_count}, "
-                #     f"idle_duration={idle_duration:.2f}s, active_duration={active_duration:.2f}s")
 
                 # Export the flow and remove from the flows map
                 flow_data = FlowData(
@@ -335,7 +324,7 @@ try:
         encoded_data = compression.encode(accumulated_serialized_data, data_probs)
 
         # Guardar los datos comprimidos en un archivo binario
-        filename = "compressed_flows_synthetic.dat"
+        filename = "compressed_flows.dat"
         compression.save_to_file(filename, encoded_keys, encoded_data, accumulated_serialized_keys, accumulated_serialized_data, key_probs, data_probs)
         print("File succesfully compressed")
 
