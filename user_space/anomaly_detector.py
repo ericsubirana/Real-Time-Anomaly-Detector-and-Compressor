@@ -19,7 +19,7 @@ PACKET_CAPTURE_FILE = os.path.join("kernel_space", "packet_capture.c")
 clf = load(MODEL_FILE)
 
 # Initialize the compression class
-compression = AdaptiveArithmeticCodingFlows(precision=32)
+compression = AdaptiveArithmeticCodingFlows()
 
 # Initialize accumulated data
 accumulated_serialized_keys = []

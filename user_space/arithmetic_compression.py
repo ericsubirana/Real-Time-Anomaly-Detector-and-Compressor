@@ -1,7 +1,7 @@
 import struct
 
 class AdaptiveArithmeticCodingFlows:
-    def _init_(self, precision=32):
+    def __init__(self, precision=64):
         self.precision = precision
         self.max_range = (1 << self.precision) - 1
         self.mask = self.max_range
@@ -88,7 +88,7 @@ class AdaptiveArithmeticCodingFlows:
         try:
             # IMPORTANTE: Usa "wb" para sobreescribir el archivo en vez de "ab" para concatenar.
             # Si necesitas mantener varios bloques, tendrías que ajustar luego la lectura.
-            with open(filename, "wb") as f:
+            with open(filename, "ab") as f:
                 # Escribir encabezado de 9 bytes, porque "NEW_BLOCK" tiene 9 caracteres
                 f.write(b"NEW_BLOCK")
 
@@ -176,6 +176,8 @@ class AdaptiveArithmeticCodingFlows:
             key_probabilities, 
             data_probabilities
         )
+        siguiendo el mismo formato que en tu versión 'que funciona',
+        pero para TODOS los bloques.
         """
         results = []
         try:
