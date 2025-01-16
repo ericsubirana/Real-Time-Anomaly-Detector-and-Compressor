@@ -9,10 +9,20 @@ from bcc import BPF
 import numpy as np
 import pandas as pd
 from joblib import load
+from arithmetic_compression import AdaptiveArithmeticCodingFlows
 
 # Load the trained model
-model_file = "/home/subi/Desktop/TMA_PROJECT/AI_training/incremental_model.joblib"
+model_file = "/home/arnau/Desktop/xd/TMA_PROJECT/AI_training/incremental_model.joblib"
 clf = load(model_file)
+
+# Initialize the compression class
+compression = AdaptiveArithmeticCodingFlows(precision=32)
+
+# Initialize accumulated data
+accumulated_serialized_keys = []
+accumulated_serialized_data = []
+accumulated_key_frequencies = {}
+accumulated_data_frequencies = {}
 
 def preprocess_flow_for_ai(flow_data):
     # Extract features 
@@ -105,7 +115,7 @@ def preprocess_flow_for_ai(flow_data):
     features_df = pd.DataFrame([features], columns=column_names)
     
     # Normalize and preprocess the features (ensure they match your training data format)
-    scaler = load("/home/subi/Desktop/TMA_PROJECT/AI_training/scaler.joblib")  # Assuming you saved your scaler during training
+    scaler = load("/home/arnau/Desktop/xd/TMA_PROJECT/AI_training/scaler.joblib")  # Assuming you saved your scaler during training
     features_scaled = scaler.transform(features_df)
     
     return features_scaled
@@ -162,13 +172,13 @@ class FlowData(ctypes.Structure):
     ]
 
 try:
-    with open("/home/subi/Desktop/TMA_PROJECT/kernel_space/packet_capture.c", "r") as f:
+    with open("/home/arnau/Desktop/xd/TMA_PROJECT/kernel_space/packet_capture.c", "r") as f:
         c_code = f.read()
 
     c_code = f"""{c_code}"""
     b = BPF(text=c_code)
     fn_capture_packet = b.load_func("capture_packet", BPF.XDP)
-    b.attach_xdp(dev="enp0s8", fn=fn_capture_packet, flags=0)
+    b.attach_xdp(dev="enp0s3", fn=fn_capture_packet, flags=0)
 
     def getting_unupdated_flows(threshold_seconds=5, active_timeout=60):
         flows_map = b.get_table("flows")
@@ -176,7 +186,11 @@ try:
         current_time_mcs = time.monotonic_ns() / 1000  # Use monotonic_ns to avoid desynchronization
         print(f"Processing flows with idle_timeout={threshold_seconds}s and active_timeout={active_timeout}s:")
 
-        for key, per_cpu_data in flows_map.items():
+        for key, per_cpu_data in flows_map.items(): 
+            # Temporary frequency tables for this batch
+            key_frequencies = {}
+            data_frequencies = {}
+
             src_ip = inet_ntoa(ctypes.c_uint32(key.src_ip).value.to_bytes(4, 'big'))
             dst_ip = inet_ntoa(ctypes.c_uint32(key.dst_ip).value.to_bytes(4, 'big'))
 
@@ -280,10 +294,55 @@ try:
                 print(f"Flow from {src_ip} to {dst_ip} is: {prediction}")
                 if prediction == "ANOMALY DETECTED":
                     print(f"ALERT: Anomalous flow detected from {src_ip} to {dst_ip}!")
+
+                    flow_key = FlowKey(key.src_ip, key.dst_ip, key.src_port, key.dst_port, key.protocol)
+
+                    # Serialize the FlowKey and FlowData for compression
+                    serialized_key = tuple(compression._serialize_flow_key(flow_key))
+                    serialized_flow_data = tuple(compression._serialize_flow_data(flow_data))
+
+                    # Update frequency tables for FlowKey and FlowData
+                    compression.update_frequencies(serialized_key, key_frequencies)
+                    compression.update_frequencies(serialized_flow_data, data_frequencies)
+
+                    # Append to the list of serialized data
+                    accumulated_serialized_keys.append(serialized_key)
+                    accumulated_serialized_data.append(serialized_flow_data)
+
+                    # Update global frequency tables
+                    for k, v in key_frequencies.items():
+                        accumulated_key_frequencies[k] = accumulated_key_frequencies.get(k, 0) + v
+                    for k, v in data_frequencies.items():
+                        accumulated_data_frequencies[k] = accumulated_data_frequencies.get(k, 0) + v
+
+                    else:
+                        print(f"Flow from {src_ip} to {dst_ip} is: {prediction}")
+
+                    del flows_map[key]  # Remove flow from map
                 else:
                     print(f"Flow from {src_ip} to {dst_ip} is: {prediction}")
                     del exported_flows_map[key]  # Remove normal flow from map
                 del flows_map[key]  # Remove flow from map
+        
+        if not accumulated_serialized_keys and not accumulated_serialized_data:
+            print("No data to compress.")
+            return
+        
+        key_probs = compression.calculate_probabilities(accumulated_key_frequencies)
+        data_probs = compression.calculate_probabilities(accumulated_data_frequencies)
+
+        # Codificar las claves y los datos usando la función encode
+        encoded_keys = compression.encode(accumulated_serialized_keys, key_probs)
+        encoded_data = compression.encode(accumulated_serialized_data, data_probs)
+
+        # Guardar los datos comprimidos en un archivo binario
+        filename = "compressed_flows_synthetic.dat"
+        compression.save_to_file(filename, encoded_keys, encoded_data, accumulated_serialized_keys, accumulated_serialized_data, key_probs, data_probs)
+        print("File succesfully compressed")
+
+        # Clear accumulated data
+        accumulated_serialized_keys.clear()
+        accumulated_serialized_data.clear()
 
     def periodic_print_flows(interval):
         def print_and_reschedule():
@@ -316,5 +375,5 @@ try:
     periodic_print_flows(3)
 
 except KeyboardInterrupt:
-    b.remove_xdp(dev="enp0s8", flags=0)
+    b.remove_xdp(dev="enp0s3", flags=0)
     sys.exit()
