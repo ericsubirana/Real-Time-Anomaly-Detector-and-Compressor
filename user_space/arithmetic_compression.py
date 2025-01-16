@@ -1,7 +1,7 @@
 import struct
 
 class AdaptiveArithmeticCodingFlows:
-    def __init__(self, precision=32):
+    def _init_(self, precision=32):
         self.precision = precision
         self.max_range = (1 << self.precision) - 1
         self.mask = self.max_range
@@ -82,160 +82,196 @@ class AdaptiveArithmeticCodingFlows:
 
     def save_to_file(self, filename, encoded_keys, encoded_data, keys, data, key_probabilities, data_probabilities):
         """
-        Guarda los valores codificados, las probabilidades y los valores individuales únicos de las claves y datos en un archivo binario.
+        Guarda los valores codificados, las probabilidades y los valores
+        individuales únicos de las claves y datos en un archivo binario.
         """
         try:
-            with open(filename, "ab") as f:
-                # Escribir encabezado
+            # IMPORTANTE: Usa "wb" para sobreescribir el archivo en vez de "ab" para concatenar.
+            # Si necesitas mantener varios bloques, tendrías que ajustar luego la lectura.
+            with open(filename, "wb") as f:
+                # Escribir encabezado de 9 bytes, porque "NEW_BLOCK" tiene 9 caracteres
                 f.write(b"NEW_BLOCK")
 
-                # Guardar el valor codificado de las claves
+                # Guardar el valor codificado de las claves (un entero 64 bits)
                 f.write(struct.pack(">Q", encoded_keys))
                 print(f"Saved encoded keys: {encoded_keys}")
 
-                # Guardar el valor codificado de los datos
+                # Guardar el valor codificado de los datos (un entero 64 bits)
                 f.write(struct.pack(">Q", encoded_data))
                 print(f"Saved encoded data: {encoded_data}")
 
                 # Deduplicar valores individuales de las claves
-                unique_key_values = list(set(value for key in keys for value in key))  # Extraer valores individuales únicos
-                print(f"Unique key values: {unique_key_values}")  # Verifica los valores únicos de las claves
+                unique_key_values = list(set(value for key_ in keys for value in key_))
+                print(f"Unique key values: {unique_key_values}")
                 value_to_index = {value: idx for idx, value in enumerate(unique_key_values)}
 
-                # Comprobar que todos los valores en las claves estén en los valores únicos
-                for key in keys:
-                    for value in key:
-                        if value not in value_to_index:
-                            print(f"Warning: Value {value} from key {key} not found in unique key values.")
-
-                f.write(struct.pack(">I", len(unique_key_values)))  # Número de valores únicos
-                f.write(struct.pack(f">{len(unique_key_values)}I", *unique_key_values))  # Guardar los valores únicos
+                # Escribir la cantidad de valores únicos de clave
+                f.write(struct.pack(">I", len(unique_key_values)))
+                # Escribir los valores únicos de clave
+                f.write(struct.pack(f">{len(unique_key_values)}I", *unique_key_values))
                 print(f"Saved {len(unique_key_values)} unique key values.")
 
-                # Guardar índices para reconstruir las claves
-                f.write(struct.pack(">I", len(keys)))  # Número de claves
-                for key in keys:
-                    f.write(struct.pack(f">{len(key)}I", *(value_to_index[v] for v in key)))  # Usar índice de los valores
-                print(f"Saved indices for {len(keys)} keys.")
+                # Guardar cuántas claves hay en total
+                f.write(struct.pack(">I", len(keys)))
+                # Guardar índices para cada clave
+                for key_ in keys:
+                    # 1) Escribir la longitud de la clave
+                    f.write(struct.pack(">I", len(key_)))
+                    # 2) Escribir los índices en base a unique_key_values
+                    for v in key_:
+                        f.write(struct.pack(">I", value_to_index[v]))
+                print(f"Saved indices for", len(keys), "keys.")
 
-                # Guardar probabilidades de las claves
-                f.write(struct.pack(">I", len(key_probabilities)))  # Número de probabilidades de claves
+                # Guardar cuántas probabilidades de clave tenemos
+                f.write(struct.pack(">I", len(key_probabilities)))
+                # Guardar (valor, probabilidad) para cada clave
                 for value, prob in key_probabilities.items():
-                    f.write(struct.pack(">I", value))  # Valor individual
-                    f.write(struct.pack(">f", prob))  # Probabilidad
-                print(f"Saved {len(key_probabilities)} key probabilities.")
+                    f.write(struct.pack(">I", value))
+                    f.write(struct.pack(">f", prob))
+                print(f"Saved", len(key_probabilities), "key probabilities.")
 
-                # Deduplicar valores individuales de los datos (similar a las claves)
-                unique_data_values = list(set(value for datum in data for value in datum))  # Extraer valores individuales únicos
-                print(f"Unique data values: {unique_data_values}")  # Verifica los valores únicos de los datos
+                # Deduplicar valores individuales de los datos
+                unique_data_values = list(set(value for datum in data for value in datum))
+                print(f"Unique data values: {unique_data_values}")
                 value_to_data_index = {value: idx for idx, value in enumerate(unique_data_values)}
 
-                # Comprobar que todos los valores en los datos estén en los valores únicos
+                # Escribir la cantidad de valores únicos de datos
+                f.write(struct.pack(">I", len(unique_data_values)))
+                # Escribir los valores únicos de datos
+                f.write(struct.pack(f">{len(unique_data_values)}I", *unique_data_values))
+                print(f"Saved", len(unique_data_values), "unique data values.")
+
+                # Guardar cuántos datos hay en total
+                f.write(struct.pack(">I", len(data)))
+                # Guardar índices para cada lista de datos
                 for datum in data:
-                    for value in datum:
-                        if value not in value_to_data_index:
-                            print(f"Warning: Value {value} from data {datum} not found in unique data values.")
+                    # 1) Escribir la longitud de la lista de datos
+                    f.write(struct.pack(">I", len(datum)))
+                    # 2) Escribir los índices
+                    for v in datum:
+                        f.write(struct.pack(">I", value_to_data_index[v]))
+                print(f"Saved indices for", len(data), "data.")
 
-                f.write(struct.pack(">I", len(unique_data_values)))  # Número de valores únicos
-                f.write(struct.pack(f">{len(unique_data_values)}I", *unique_data_values))  # Guardar los valores únicos
-                print(f"Saved {len(unique_data_values)} unique data values.")
-
-                # Guardar índices para reconstruir los datos
-                f.write(struct.pack(">I", len(data)))  # Número de datos
-                for datum in data:
-                    f.write(struct.pack(f">{len(datum)}I", *(value_to_data_index[v] for v in datum)))  # Usar índice de los valores
-                print(f"Saved indices for {len(data)} data.")
-
-                # Guardar probabilidades de los datos
-                f.write(struct.pack(">I", len(data_probabilities)))  # Número de probabilidades de datos
+                # Guardar cuántas probabilidades de datos tenemos
+                f.write(struct.pack(">I", len(data_probabilities)))
+                # Guardar (valor, probabilidad) para cada valor de datos
                 for value, prob in data_probabilities.items():
-                    f.write(struct.pack(">I", value))  # Valor individual
-                    f.write(struct.pack(">f", prob))  # Probabilidad
-                print(f"Saved {len(data_probabilities)} data probabilities.")
+                    f.write(struct.pack(">I", value))
+                    f.write(struct.pack(">f", prob))
+                print(f"Saved", len(data_probabilities), "data probabilities.")
         except Exception as e:
             print(f"Error saving to file {filename}: {e}")
 
+
+
     def load_from_file(self, filename):
         """
-        Carga los valores codificados, las probabilidades y los valores únicos de las claves y los datos desde un archivo binario.
+        Carga TODOS los bloques que encuentre en el archivo binario y devuelve
+        una lista de tuplas. Cada tupla contiene:
+        (
+            encoded_keys, 
+            encoded_data, 
+            keys, 
+            data, 
+            key_probabilities, 
+            data_probabilities
+        )
         """
+        results = []
         try:
             with open(filename, "rb") as f:
-                # Leer encabezado
-                header = f.read(9)  # Se espera que la longitud del encabezado sea 8 bytes
-                if header != b"NEW_BLOCK":
-                    print(f"Unexpected header: {header}")
-                    return
+                while True:
+                    # 1) Leer la cabecera de 9 bytes ("NEW_BLOCK")
+                    header = f.read(9)
+                    if len(header) < 9:
+                        # Se alcanzó EOF o el bloque está incompleto
+                        break
+                    if header != b"NEW_BLOCK":
+                        print(f"Unexpected header: {header}")
+                        break
 
-                # Leer el valor codificado de las claves
-                encoded_keys = struct.unpack(">Q", f.read(8))[0]
-                print(f"Loaded encoded keys: {encoded_keys}")
+                    # 2) Leer el valor codificado de las claves (entero de 64 bits)
+                    encoded_keys = struct.unpack(">Q", f.read(8))[0]
+                    print(f"Loaded encoded keys: {encoded_keys}")
 
-                # Leer el valor codificado de los datos
-                encoded_data = struct.unpack(">Q", f.read(8))[0]
-                print(f"Loaded encoded data: {encoded_data}")
+                    # 3) Leer el valor codificado de los datos (entero de 64 bits)
+                    encoded_data = struct.unpack(">Q", f.read(8))[0]
+                    print(f"Loaded encoded data: {encoded_data}")
 
-                # Leer los valores únicos de las claves
-                num_unique_keys = struct.unpack(">I", f.read(4))[0]
-                unique_key_values = struct.unpack(f">{num_unique_keys}I", f.read(4 * num_unique_keys))
-                print(f"Loaded unique key values: {unique_key_values}")
+                    # 4) Leer los valores únicos de las claves
+                    num_unique_keys = struct.unpack(">I", f.read(4))[0]
+                    unique_key_values = struct.unpack(f">{num_unique_keys}I", f.read(4 * num_unique_keys))
+                    print(f"Loaded {num_unique_keys} unique key values.")
 
-                # Leer los índices de las claves
-                num_keys = struct.unpack(">I", f.read(4))[0]
-                keys = []
-                for i in range(num_keys):
-                    num_values_in_key = struct.unpack(">I", f.read(4))[0]
-                    key_indices = struct.unpack(f">{num_values_in_key}I", f.read(4 * num_values_in_key))
+                    # 5) Cargar las claves usando los índices
+                    num_keys = struct.unpack(">I", f.read(4))[0]
+                    keys = []
+                    for _ in range(num_keys):
+                        key_length = struct.unpack(">I", f.read(4))[0]
+                        key_indices = struct.unpack(f">{key_length}I", f.read(4 * key_length))
 
-                    # Validación de índices
-                    invalid_indices = [idx for idx in key_indices if idx >= len(unique_key_values)]
-                    if invalid_indices:
-                        print(f"Error: Invalid indices in key {i}: {invalid_indices}")
-                        continue  # O puedes lanzar una excepción si prefieres detener el proceso
+                        # Validación de índices (opcional)
+                        invalid_indices = [idx for idx in key_indices if idx >= len(unique_key_values)]
+                        if invalid_indices:
+                            print(f"Error: Invalid indices in key: {invalid_indices}")
+                            continue
 
-                    keys.append([unique_key_values[idx] for idx in key_indices])
-                print(f"Loaded {num_keys} keys.")
+                        # Convertir índices a valores
+                        keys.append([unique_key_values[idx] for idx in key_indices])
+                    print(f"Loaded {num_keys} keys.")
 
-                # Leer las probabilidades de las claves
-                num_key_probabilities = struct.unpack(">I", f.read(4))[0]
-                key_probabilities = {}
-                for _ in range(num_key_probabilities):
-                    value = struct.unpack(">I", f.read(4))[0]
-                    prob = struct.unpack(">f", f.read(4))[0]
-                    key_probabilities[value] = prob
-                print(f"Loaded {num_key_probabilities} key probabilities.")
+                    # 6) Leer las probabilidades de las claves
+                    num_key_probabilities = struct.unpack(">I", f.read(4))[0]
+                    key_probabilities = {}
+                    for _ in range(num_key_probabilities):
+                        value = struct.unpack(">I", f.read(4))[0]
+                        prob = struct.unpack(">f", f.read(4))[0]
+                        key_probabilities[value] = prob
+                    print(f"Loaded {num_key_probabilities} key probabilities.")
 
-                # Leer los valores únicos de los datos
-                num_unique_data = struct.unpack(">I", f.read(4))[0]
-                unique_data_values = struct.unpack(f">{num_unique_data}I", f.read(4 * num_unique_data))
-                print(f"Loaded unique data values: {unique_data_values}")
+                    # 7) Leer los valores únicos de los datos
+                    num_unique_data = struct.unpack(">I", f.read(4))[0]
+                    unique_data_values = struct.unpack(f">{num_unique_data}I", f.read(4 * num_unique_data))
+                    print(f"Loaded {num_unique_data} unique data values.")
 
-                # Leer los índices de los datos
-                num_data = struct.unpack(">I", f.read(4))[0]
-                data = []
-                for i in range(num_data):
-                    num_values_in_datum = struct.unpack(">I", f.read(4))[0]
-                    datum_indices = struct.unpack(f">{num_values_in_datum}I", f.read(4 * num_values_in_datum))
+                    # 8) Cargar los datos usando los índices
+                    num_data = struct.unpack(">I", f.read(4))[0]
+                    data = []
+                    for _ in range(num_data):
+                        data_length = struct.unpack(">I", f.read(4))[0]
+                        data_indices = struct.unpack(f">{data_length}I", f.read(4 * data_length))
 
-                    # Validación de índices
-                    invalid_indices = [idx for idx in datum_indices if idx >= len(unique_data_values)]
-                    if invalid_indices:
-                        print(f"Error: Invalid indices in data {i}: {invalid_indices}")
-                        continue  # O puedes lanzar una excepción si prefieres detener el proceso
+                        invalid_indices = [idx for idx in data_indices if idx >= len(unique_data_values)]
+                        if invalid_indices:
+                            print(f"Error: Invalid indices in data: {invalid_indices}")
+                            continue
 
-                    data.append([unique_data_values[idx] for idx in datum_indices])
-                print(f"Loaded {num_data} data.")
+                        data.append([unique_data_values[idx] for idx in data_indices])
+                    print(f"Loaded {num_data} data.")
 
-                # Leer las probabilidades de los datos
-                num_data_probabilities = struct.unpack(">I", f.read(4))[0]
-                data_probabilities = {}
-                for _ in range(num_data_probabilities):
-                    value = struct.unpack(">I", f.read(4))[0]
-                    prob = struct.unpack(">f", f.read(4))[0]
-                    data_probabilities[value] = prob
-                print(f"Loaded {num_data_probabilities} data probabilities.")
+                    # 9) Leer las probabilidades de los datos
+                    num_data_probabilities = struct.unpack(">I", f.read(4))[0]
+                    data_probabilities = {}
+                    for _ in range(num_data_probabilities):
+                        value = struct.unpack(">I", f.read(4))[0]
+                        prob = struct.unpack(">f", f.read(4))[0]
+                        data_probabilities[value] = prob
+                    print(f"Loaded {num_data_probabilities} data probabilities.")
+
+                    # Guardar este bloque en la lista de resultados
+                    results.append((encoded_keys,
+                                    encoded_data,
+                                    keys,
+                                    data,
+                                    key_probabilities,
+                                    data_probabilities))
+
         except Exception as e:
             print(f"Error loading from file {filename}: {e}")
+
+        # Devolver todos los bloques leídos
+        return results
+
 
     def _serialize_flow_key(self, flow_key):
         # Serializa un FlowKey para la compresión
