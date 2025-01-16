@@ -12,7 +12,7 @@ from joblib import load
 from arithmetic_compression import AdaptiveArithmeticCodingFlows
 
 # Load the trained model
-model_file = "/home/arnau/Desktop/xd/TMA_PROJECT/AI_training/incremental_model.joblib"
+model_file = "/home/subi/Desktop/TMA_PROJECT/AI_training/incremental_model.joblib"
 clf = load(model_file)
 
 # Initialize the compression class
@@ -115,7 +115,7 @@ def preprocess_flow_for_ai(flow_data):
     features_df = pd.DataFrame([features], columns=column_names)
     
     # Normalize and preprocess the features (ensure they match your training data format)
-    scaler = load("/home/arnau/Desktop/xd/TMA_PROJECT/AI_training/scaler.joblib")  # Assuming you saved your scaler during training
+    scaler = load("/home/subi/Desktop/TMA_PROJECT/AI_training/scaler.joblib")  # Assuming you saved your scaler during training
     features_scaled = scaler.transform(features_df)
     
     return features_scaled
@@ -172,13 +172,13 @@ class FlowData(ctypes.Structure):
     ]
 
 try:
-    with open("/home/arnau/Desktop/xd/TMA_PROJECT/kernel_space/packet_capture.c", "r") as f:
+    with open("/home/subi/Desktop/TMA_PROJECT/kernel_space/packet_capture.c", "r") as f:
         c_code = f.read()
 
     c_code = f"""{c_code}"""
     b = BPF(text=c_code)
     fn_capture_packet = b.load_func("capture_packet", BPF.XDP)
-    b.attach_xdp(dev="enp0s3", fn=fn_capture_packet, flags=0)
+    b.attach_xdp(dev="enp0s8", fn=fn_capture_packet, flags=0)
 
     def getting_unupdated_flows(threshold_seconds=5, active_timeout=60):
         flows_map = b.get_table("flows")
@@ -209,7 +209,7 @@ try:
 
             # Check if the flow should be exported
             if idle_duration > threshold_seconds or active_duration > active_timeout:
-                # Perform the summing operations only when the flow is exported
+                #Perform the summing operations only when the flow is exported
                 total_packets = sum(cpu_data.packet_count for cpu_data in per_cpu_data)
                 total_byte_count = sum(cpu_data.byte_count for cpu_data in per_cpu_data)
                 fwd_packet_count = sum(cpu_data.fwd_packet_count for cpu_data in per_cpu_data)
@@ -255,7 +255,7 @@ try:
                 #     f"idle_duration={idle_duration:.2f}s, active_duration={active_duration:.2f}s")
 
                 # Export the flow and remove from the flows map
-                new_data = FlowData(
+                flow_data = FlowData(
                     first_seen=first_seen,
                     last_seen=last_seen,
                     packet_count=total_packets,
@@ -286,7 +286,7 @@ try:
                     idle_duration=idle_duration,
                     active_duration=active_duration
                 )
-                exported_flows_map[key] = new_data
+                exported_flows_map[key] = flow_data
 
                 prediction = predict_flow_behavior(exported_flows_map[key])
                 src_ip = inet_ntoa(ctypes.c_uint32(key.src_ip).value.to_bytes(4, 'big'))
@@ -318,7 +318,6 @@ try:
                     else:
                         print(f"Flow from {src_ip} to {dst_ip} is: {prediction}")
 
-                    del flows_map[key]  # Remove flow from map
                 else:
                     print(f"Flow from {src_ip} to {dst_ip} is: {prediction}")
                     del exported_flows_map[key]  # Remove normal flow from map
@@ -375,5 +374,5 @@ try:
     periodic_print_flows(3)
 
 except KeyboardInterrupt:
-    b.remove_xdp(dev="enp0s3", flags=0)
+    b.remove_xdp(dev="enp0s8", flags=0)
     sys.exit()
