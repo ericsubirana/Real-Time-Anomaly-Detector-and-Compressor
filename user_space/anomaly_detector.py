@@ -76,16 +76,16 @@ def preprocess_flow_for_ai(flow_data):
 
     #FUTURE IMPLEMETNATION 
     column_names = [
-        'Flow Packets/s',
-        'Flow Bytes/s',
+        'Flow Duration',
         'Total Fwd Packets',
         'Total Backward Packets',
+        'Flow Packets/s',
+        'Flow Bytes/s',
         'Total Length of Fwd Packets',
         'Total Length of Bwd Packets',
         'Min Packet Length',
         'Max Packet Length',
         'Packet Length Variance',
-        'Flow Duration',
         'Flow IAT Min',
         'Flow IAT Max',
         'Fwd IAT Total',

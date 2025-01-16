@@ -7,33 +7,33 @@ from joblib import dump, load
 import os
 import numpy as np
 
-# Path to the model file
+# Path to the model and scaler files
 model_file = "incremental_model.joblib"
 scaler_file = "scaler.joblib"
-# Load the CSV file
-def load_dataset(csv_file):
-    # Load dataset
-    df = pd.read_csv(csv_file, header=None, low_memory=False)
 
+# Load the dataset and set column names
+def load_dataset(csv_file):
+    df = pd.read_csv(csv_file)
+
+    # Column names from the dataset
     column_names = [
-        "Destination Port", "Flow Duration", "Total Fwd Packets", "Total Backward Packets",
-        "Total Length of Fwd Packets", "Total Length of Bwd Packets", "Fwd Packet Length Max",
-        "Fwd Packet Length Min", "Fwd Packet Length Mean", "Fwd Packet Length Std",
-        "Bwd Packet Length Max", "Bwd Packet Length Min", "Bwd Packet Length Mean", "Bwd Packet Length Std",
-        "Flow Bytes/s", "Flow Packets/s", "Flow IAT Mean", "Flow IAT Std", "Flow IAT Max", "Flow IAT Min",
-        "Fwd IAT Total", "Fwd IAT Mean", "Fwd IAT Std", "Fwd IAT Max", "Fwd IAT Min",
-        "Bwd IAT Total", "Bwd IAT Mean", "Bwd IAT Std", "Bwd IAT Max", "Bwd IAT Min",
-        "Fwd PSH Flags", "Bwd PSH Flags", "Fwd URG Flags", "Bwd URG Flags", "Fwd Header Length",
-        "Bwd Header Length", "Fwd Packets/s", "Bwd Packets/s", "Min Packet Length", "Max Packet Length",
-        "Packet Length Mean", "Packet Length Std", "Packet Length Variance", "FIN Flag Count",
-        "SYN Flag Count", "RST Flag Count", "PSH Flag Count", "ACK Flag Count", "URG Flag Count",
-        "CWE Flag Count", "ECE Flag Count", "Down/Up Ratio", "Average Packet Size", "Avg Fwd Segment Size",
-        "Avg Bwd Segment Size", "Fwd Header Length", "Fwd Avg Bytes/Bulk", "Fwd Avg Packets/Bulk",
-        "Fwd Avg Bulk Rate", "Bwd Avg Bytes/Bulk", "Bwd Avg Packets/Bulk", "Bwd Avg Bulk Rate",
-        "Subflow Fwd Packets", "Subflow Fwd Bytes", "Subflow Bwd Packets", "Subflow Bwd Bytes",
-        "Init_Win_bytes_forward", "Init_Win_bytes_backward", "act_data_pkt_fwd", "min_seg_size_forward",
-        "Active Mean", "Active Std", "Active Max", "Active Min", "Idle Mean", "Idle Std", "Idle Max",
-        "Idle Min", "Label"
+        "Unnamed: 0", "Flow ID", "Source IP", "Source Port", "Destination IP", "Destination Port", "Protocol",
+        "Timestamp", "Flow Duration", "Total Fwd Packets", "Total Backward Packets", "Total Length of Fwd Packets",
+        "Total Length of Bwd Packets", "Fwd Packet Length Max", "Fwd Packet Length Min", "Fwd Packet Length Mean",
+        "Fwd Packet Length Std", "Bwd Packet Length Max", "Bwd Packet Length Min", "Bwd Packet Length Mean",
+        "Bwd Packet Length Std", "Flow Bytes/s", "Flow Packets/s", "Flow IAT Mean", "Flow IAT Std", "Flow IAT Max",
+        "Flow IAT Min", "Fwd IAT Total", "Fwd IAT Mean", "Fwd IAT Std", "Fwd IAT Max", "Fwd IAT Min",
+        "Bwd IAT Total", "Bwd IAT Mean", "Bwd IAT Std", "Bwd IAT Max", "Bwd IAT Min", "Fwd PSH Flags",
+        "Bwd PSH Flags", "Fwd URG Flags", "Bwd URG Flags", "Fwd Header Length", "Bwd Header Length",
+        "Fwd Packets/s", "Bwd Packets/s", "Min Packet Length", "Max Packet Length", "Packet Length Mean",
+        "Packet Length Std", "Packet Length Variance", "FIN Flag Count", "SYN Flag Count", "RST Flag Count",
+        "PSH Flag Count", "ACK Flag Count", "URG Flag Count", "CWE Flag Count", "ECE Flag Count", "Down/Up Ratio",
+        "Average Packet Size", "Avg Fwd Segment Size", "Avg Bwd Segment Size", "Fwd Header Length.1",
+        "Fwd Avg Bytes/Bulk", "Fwd Avg Packets/Bulk", "Fwd Avg Bulk Rate", "Bwd Avg Bytes/Bulk",
+        "Bwd Avg Packets/Bulk", "Bwd Avg Bulk Rate", "Subflow Fwd Packets", "Subflow Fwd Bytes",
+        "Subflow Bwd Packets", "Subflow Bwd Bytes", "Init_Win_bytes_forward", "Init_Win_bytes_backward",
+        "act_data_pkt_fwd", "min_seg_size_forward", "Active Mean", "Active Std", "Active Max", "Active Min",
+        "Idle Mean", "Idle Std", "Idle Max", "Idle Min", "SimillarHTTP", "Inbound", "Label"
     ]
 
     df.columns = column_names
@@ -41,7 +41,7 @@ def load_dataset(csv_file):
     # Handle missing values
     df.fillna(0, inplace=True)
 
-    # Select only the relevant columns for your task
+    # Select relevant columns
     selected_columns = [
         'Flow Duration',
         'Total Fwd Packets',
@@ -71,7 +71,6 @@ def load_dataset(csv_file):
     ]
     df = df[selected_columns]
 
-    # Convert numeric columns to floats
     numeric_columns = df.columns.difference(["Label"])
     df[numeric_columns] = df[numeric_columns].apply(pd.to_numeric, errors='coerce')
 
@@ -81,13 +80,14 @@ def load_dataset(csv_file):
     return df
 
 
-
 # Preprocess the dataset
 def preprocess_data(df, scaler=None):
     # Separate features and labels
-    print(df["Flow Duration"])
-    y = df["Label"].apply(lambda x: 1 if x == "BENIGN" else 0).to_numpy() #1 GOOD | 0 BAD
+    y = df["Label"].apply(lambda x: 1 if x == "BENIGN" else 0).to_numpy()  # 1 = BENIGN, 0 = MALICIOUS
     X = df.drop(columns=["Label"])
+
+    # Replace inf values with 0
+    X.replace([np.inf, -np.inf], 0, inplace=True)
 
     # Encode categorical features
     categorical_columns = X.select_dtypes(include=["object"]).columns
@@ -97,10 +97,8 @@ def preprocess_data(df, scaler=None):
         X[col] = le.fit_transform(X[col])
         label_encoders[col] = le
 
-    X.replace([np.inf, -np.inf], 0, inplace=True)
-
-   
     # Normalize the features
+    print(X)
     if scaler is None:
         scaler = StandardScaler()
         X = scaler.fit_transform(X)
@@ -110,13 +108,13 @@ def preprocess_data(df, scaler=None):
     return X, y, scaler, label_encoders
 
 # Load or initialize the model
-def load_or_initialize_model(input_dim):
+def load_or_initialize_model():
     if os.path.exists(model_file):
         print("Loading existing model...")
         model = load(model_file)
     else:
-        print("No existing model found. Training a new one...")
-        model = SGDClassifier(loss="log_loss", random_state=42)  # Use 'log' for logistic regression
+        print("No existing model found. Initializing a new one...")
+        model = SGDClassifier(loss="log_loss", random_state=42)  # Logistic regression
     return model
 
 def load_or_initialize_scaler():
@@ -131,9 +129,11 @@ def load_or_initialize_scaler():
 # Main training and saving logic
 def train_and_save_model(csv_file):
     # Load and preprocess the data
+    print("loading dataset")
     df = load_dataset(csv_file)
 
     # Load or initialize the scaler
+    print("init scaler")
     scaler = load_or_initialize_scaler()
     X, y, scaler, label_encoders = preprocess_data(df, scaler)
 
@@ -143,7 +143,7 @@ def train_and_save_model(csv_file):
         print(f"Scaler saved to {scaler_file}")
 
     # Load or initialize the model
-    clf = load_or_initialize_model(X.shape[1])
+    clf = load_or_initialize_model()
 
     # Incrementally train the model
     print("Incrementally training the model...")
@@ -163,17 +163,19 @@ def train_and_save_model(csv_file):
 # Example usage
 if __name__ == "__main__":
     file_names = {
-        "Friday-WorkingHours-Afternoon-DDos.pcap_ISCX.csv",
-        "Friday-WorkingHours-Afternoon-PortScan.pcap_ISCX.csv",
-        "Friday-WorkingHours-Morning.pcap_ISCX.csv",
-        "Monday-WorkingHours.pcap_ISCX.csv",
-        "Thursday-WorkingHours-Afternoon-Infilteration.pcap_ISCX.csv",
-        "Thursday-WorkingHours-Morning-WebAttacks.pcap_ISCX.csv",
-        "Tuesday-WorkingHours.pcap_ISCX.csv",
-        "Wednesday-workingHours.pcap_ISCX.csv",
+        "DrDoS_DNS.csv",
+        "DrDoS_LDAP.csv",
+        "DrDoS_MSSQL.csv",
+        "DrDoS_NetBIOS.csv",
+        "DrDoS_NTP.csv",
+        "DrDoS_SNMP.csv",
+        "DrDoS_SSDP.csv",
+        "DrDoS_UDP.csv",
+        "Syn.csv",
+        "TFTP.csv",
+        "UDPLag.csv",
     }
 
     for csv_file in file_names:
-        file_path = f"archive/{csv_file}"
-        print(csv_file)
+        file_path = f"archive/01-12/{csv_file}"
         train_and_save_model(file_path)
