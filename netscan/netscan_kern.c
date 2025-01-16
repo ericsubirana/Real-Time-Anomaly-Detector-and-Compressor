@@ -18,6 +18,20 @@
 
 //bpftool btf dump file /sys/kernel/btf/vmlinux format c > vmlinux.h
 
+enum lg_values{//linear regression values
+	FLOW_PACKETS,
+	TOTAL_LENGTH,
+	TOTAL_FWD,
+	TOTAL_BWD,
+	TOTAL_LENGTH_BWD,
+	MIN_P_LENGTH,
+	MAX_P_LENGTH,
+	SYN_FCOUNT,
+	ACK_FCOUNT,
+	PSH_FCOUNT,
+	URG_FCOUNT
+};
+
 struct flow_key {
 	__u32 src_ip;
 	__u32 dst_ip;
@@ -30,6 +44,17 @@ struct flow_data {
 	__u64 first_seen;
 	__u64 last_seen;
 	__u32 packet_count;
+	//flow packets/s = packet_count/(last_seen-first_seen);
+	__u64 total_length;
+	__u64 total_fwd; //total packets forwarded
+	__u64 total_bwd; //total packets backwards
+	__u64 total_fwd_length; //total lengths packets forwarded
+	__u32 min_p_length; //smallest packet
+	__u32 max_p_length; //largest packet
+	__u32 syn_count;
+	__u32 ack_count;
+	__u32 psh_count;
+	__u32 urg_count;
 };
 
 //BPF_MAP_TYPE_PERCPU_ARRAY
@@ -55,6 +80,11 @@ struct {
 } flow_exports SEC(".maps");
 
 int predict(){
+	int i,j;
+	for(i=0;i<ML_HEIGHT;i++){
+		for(j=0;j<ML_WIDTH;j++){
+		}
+	}
 
 	return 0;
 }
@@ -112,7 +142,7 @@ int netScan(struct xdp_md *ctx){
 		//flows.update(&key, &new_data);
 		bpf_map_update_elem(&flows,&key,&new_data,BPF_NOEXIST);
 	}
-	int result = predict(data);
+	int result = predict();//&flows,&data);
 	if(result){
 	}
 	else{
