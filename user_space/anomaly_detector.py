@@ -342,6 +342,8 @@ try:
         # Clear accumulated data
         accumulated_serialized_keys.clear()
         accumulated_serialized_data.clear()
+        accumulated_key_frequencies.clear()
+        accumulated_data_frequencies.clear()
 
     def periodic_print_flows(interval):
         def print_and_reschedule():
@@ -371,7 +373,7 @@ try:
     except ValueError:
         print("Error: Please enter a valid integer value.")
         
-    periodic_print_flows(3)
+    periodic_print_flows(1)
 
 except KeyboardInterrupt:
     b.remove_xdp(dev="enp0s8", flags=0)
