@@ -5,7 +5,7 @@ class AdaptiveArithmeticCodingFlows:
     Implements adaptive arithmetic coding for flow data compression.
     Serialization and frequency updates are provided for flow keys and flow data.
     """
-    def __init__(self, precision=64):
+    def __init__(self, precision=32):
         self.precision = precision
         self.max_range = (1 << self.precision) - 1
         self.mask = self.max_range
